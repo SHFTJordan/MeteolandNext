@@ -1,40 +1,29 @@
 import { supabaseClient } from "@@/config";
 import { CustomError } from "@@/utils/ssrUtils";
 
-async function signupUserService(email: string, password: string) {
-  const { data: authData, error: authError } =
-    await supabaseClient.supabase.auth.signUp({
-      email,
-      password,
-    });
+async function signupUserService(email: string) {
+  // 1. D'abord vérifier si l'utilisateur existe et est confirmé
+  const { data: existingUsers } =
+    await supabaseClient.supabaseAdmin.auth.admin.listUsers();
+  const existingUser = existingUsers.users.find((u) => u.email === email);
 
-  if (authError) {
-    console.error("Erreur Supabase Signup:", authError.message);
-    if (authError.message.toLowerCase().includes("user already registered")) {
-      throw new CustomError("Email déjà utilisé", 409);
-    }
-    throw new CustomError(authError.message, 500);
+  if (existingUser?.email_confirmed_at) {
+    // Utilisateur déjà confirmé = compte existe
+    
+    return { emailConfirmed: true, emailSent: false };
   }
 
-  const user = authData?.user;
+  const { error } = await supabaseClient.supabase.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true },
+  });
 
-  if (!user || !user.id) {
-    throw new CustomError("Erreur lors de la création de l'utilisateur", 500);
+  if (error) {
+    console.error("Erreur signInWithOtp:", error.message);
+    throw new CustomError(error.message, 500);
   }
 
-  const { data: freshUser, error: adminError } =
-    await supabaseClient.supabaseAdmin.auth.admin.getUserById(user.id);
-
-  if (adminError) {
-    console.error("Erreur admin :", adminError.message);
-    throw new CustomError("Erreur interne lors de la vérification", 500);
-  }
-
-  if (!freshUser?.user?.email_confirmed_at) {
-    return { emailConfirmed: false };
-  }
-
-  return { emailConfirmed: true };
+  return { emailConfirmed: false, emailSent: true };
 }
 
 async function insertUserDataWithSessionService(
@@ -42,7 +31,8 @@ async function insertUserDataWithSessionService(
   refreshToken: string,
   username: string,
   birthday_date: string,
-  email: string
+  email: string,
+  password: string
 ) {
   const supabaseToken =
     await supabaseClient.getSupabaseWithActiveSessionRefresh(
@@ -74,6 +64,15 @@ async function insertUserDataWithSessionService(
 
   if (existingUser) {
     throw new CustomError("Utilisateur déjà confirmé", 409);
+  }
+
+  const { error: passwordError } = await supabaseToken.auth.updateUser({
+    password: password,
+  });
+
+  if (passwordError) {
+    console.error("Erreur mise à jour mot de passe:", passwordError.message);
+    throw new CustomError("Erreur lors de la définition du mot de passe", 500);
   }
 
   const { error: insertError } = await supabaseToken.from("Users").insert([
@@ -198,9 +197,9 @@ async function deleteUserAuthService(userId: string) {
 }
 
 async function sendEmailResetPasswordService(email: string) {
-  const { error: sendEmailError } = await
-    supabaseClient.supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "http://172.29.157.133/forgetpassword",
+  const { error: sendEmailError } =
+    await supabaseClient.supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://meteoland-next.vercel.app/forgetpassword",
     });
 
   if (sendEmailError) {
@@ -216,7 +215,7 @@ async function sendEmailResetPasswordService(email: string) {
 async function confirmEmailOtpService(token_hash: string, type: string) {
   const { data: sessionData, error: verifyError } =
     await supabaseClient.supabase.auth.verifyOtp({
-      type:type as "recovery",
+      type: type as "recovery",
       token_hash,
     });
 
@@ -278,6 +277,21 @@ async function verifyUserTokenSignUpService(token_hash: string) {
   };
 }
 
+async function isUsernameAvailableService(username: string) {
+  const { data, error } = await supabaseClient.supabaseAdmin
+    .from("Users")
+    .select("id")
+    .eq("username", username)
+    .single();
+
+  if (error) {
+    console.error("Erreur vérification username :", error.message);
+    throw new CustomError("Erreur lors de la vérification du nom d'utilisateur", 500);
+  }
+
+  return !data; // true si disponible, false si déjà pris
+}
+
 export {
   signupUserService,
   insertUserDataWithSessionService,
@@ -287,4 +301,5 @@ export {
   confirmEmailOtpService,
   updatePasswordService,
   verifyUserTokenSignUpService,
+  isUsernameAvailableService
 };
