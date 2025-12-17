@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --Meteoland-Gradiant: linear-gradient(180deg, #0b1b32 0%, #1f324c 100%);
+  --Background-Grey: #2a3b52;
+  --Button-color: #1565c0;
+  --Text-Color: #cfd8dc;
+}
+
+@theme {
+  --font-sans: var(--font-inter-sans);
+  --font-tight: var(--font-inter-tight);
+  --color-textColor: var(--Text-Color);
+  --color-background-grey: var(--Background-Grey);
+  --color-button: var(--Button-color);
+  --breakpoint-tablet : 800px;
+}
+
+* {
+  font-family: var(--font-inter-sans);
+}
+
+html {
+  min-height: 100vh;
+}
+
+body {
+  background: var(--Meteoland-Gradiant) no-repeat;
+  padding: 0rem 1.88rem;
+}
